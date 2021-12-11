@@ -5,6 +5,11 @@
 #include <iostream>
 #include <string>
 
+#include <algorithm>
+#include <mutex>
+#include <thread>
+
+
 #include <D:\3rdLib\librdkafka\src-cpp\rdkafkacpp.h>
 
 static bool run = true;
@@ -16,6 +21,8 @@ static long msg_cnt = 0;
 static int64_t msg_bytes = 0;
 
 static void sigterm(int sig) { run = false; }
+
+void deal_msg(const char *msg) { printf("rong  %s\n", msg); }
 
 class ExampleEventCb : public RdKafka::EventCb {
 public:
@@ -56,7 +63,7 @@ void msg_consume(RdKafka::Message *message, void *opaque) {
   // std::cout << "===msg ===" << std::endl;
   switch (message->err()) {
   case RdKafka::ERR__TIMED_OUT:
-    // std::cerr << "RdKafka::ERR__TIMED_OUT"<<std::endl;
+    std::cerr << "=====RdKafka::ERR__TIMED_OUT======" << std::endl;
     break;
 
   case RdKafka::ERR_NO_ERROR:

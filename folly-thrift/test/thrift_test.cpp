@@ -3,7 +3,8 @@
 // g++ thrift_test.cpp gen-cpp/test_types.cpp -lthrift  -std=c++14 -o test  -L/Users/ronghuang/work/3rd_lib/boost/lib -lboost_log_setup -lboost_log
 //otool -L exefile
 //install_name_tool -change @executable_path/libboost_something.dylib /opt/local/lib/libboost_something.dylib exefile
-#include "gen-cpp/test_types.h"
+//#include "gen-cpp/test_types.h"
+#include "gen-cpp/hotkey_types.h"
 #include <thrift/protocol/TBinaryProtocol.h>
 #include <thrift/server/TSimpleServer.h>
 #include <thrift/transport/TBufferTransports.h>
@@ -20,6 +21,12 @@
 
 #include <memory>
 #include <sstream>
+#include <list>
+#include <map>
+#include <thread>
+#include <unordered_map>
+#include <algorithm>
+//#include <hash_map>
 
 #include <boost/crc.hpp>
 #include <boost/log/attributes.hpp>
@@ -27,6 +34,12 @@
 #include <boost/log/expressions.hpp>
 #include <boost/log/sinks.hpp>
 #include <boost/log/sources/logger.hpp>
+
+#include "hot_key_detector.h"
+#include "hotkey_logger_manager.h"
+
+#include <gflags/gflags.h>
+#include <glog/logging.h>
 
 using namespace ::apache::thrift;
 using namespace ::apache::thrift::protocol;
@@ -54,9 +67,30 @@ namespace keywords = boost::log::keywords;
 
 #define MAX_NUM 200
 #include <fstream>
+#include <filesystem>
+namespace fs = std::filesystem;
+
+
+
 
 
 using namespace std;
+
+void initGLog(char **argv)
+{
+  FLAGS_logtostderr = false;
+    FLAGS_log_dir = "/Users/ronghuang/work/log/";
+google::InitGoogleLogging(argv[0]);
+google::SetLogDestination(google::GLOG_INFO,"/Users/ronghuang/work/log/" );
+
+google::SetStderrLogging(google::GLOG_INFO);
+google::SetLogFilenameExtension(".log");//google::InitGoogleLogging(argv[0]);
+FLAGS_colorlogtostderr = true;  // Set log color
+FLAGS_logbufsecs = 0;  // Set log output speed(s)
+FLAGS_max_log_size = 1024;  // Set max log file size
+FLAGS_stop_logging_if_full_disk = true;  // If disk is full
+
+}
 
 void init()
 {
@@ -89,102 +123,6 @@ void startLog()
     BOOST_LOG_SEV(lg, error) << "An error severity message";
     BOOST_LOG_SEV(lg, fatal) << "A fatal severity message";
 }
-
-void testThrift()
-{
-  User u;
-  u.__set_name("ddd");
-  u.__set_age(9);
-  u.__set_vip(true);
-
-  std::string thriftStr, jsonStr;
-  std::stringstream ss;
-
-  ss << u;
-  std::string s = ss.str();
-  std::cout << s << '\n';
-  //  int time;
-
-  //  //①序列化为thrift binary protocol
-  //  boost::shared_ptr<TMemoryBuffer> buffer(new TMemoryBuffer());
-
-  // TBinaryProtocol binaryProtcol(*buffer);
-
-  //  u.write(&binaryProtcol );
-  //      buffer->getBufferAsString();
-  //     auto str = buffer->getBufferAsString();
-
-  // Use TFramedTransport
-  const auto memory_buffer =
-      std::make_shared<apache::thrift::transport::TMemoryBuffer>();
-  apache::thrift::transport::TFramedTransport framed_transport(memory_buffer);
-  framed_transport.write(reinterpret_cast<const uint8_t *>(s.data()),
-                         (uint32_t)s.length());
-  framed_transport.flush();
-  std::string msg_content_framed = memory_buffer->getBufferAsString();
-
-  std::cout << "thrift反序列化" << u << "==-ms\n";
-
-  const auto buff =
-      std::make_shared<apache::thrift::transport::TMemoryBuffer>();
-  // apache::thrift::transport::TFramedTransport ff(buff);
-  // ff.write(reinterpret_cast<const uint8_t*>(u.data()));
-
-  std::fstream myfile;
-  myfile = std::fstream("file.binary", std::ios::out | std::ios::binary);
-  myfile << u;
-  myfile.close();
-
-}
-
-
-void testThrift2()
-{
-  User u;
-  u.__set_name("ddd");
-  u.__set_age(9);
-  u.__set_vip(true);
-
-  std::string thriftStr, jsonStr;
-  std::stringstream ss;
-
-  ss << u;
-  std::string s = ss.str();
- 
-  
-  // Use TFramedTransport
-  const auto memory_buffer =
-      std::make_shared<apache::thrift::transport::TMemoryBuffer>();
-  apache::thrift::transport::TFramedTransport framed_transport(memory_buffer);
-  framed_transport.write(reinterpret_cast<const uint8_t *>(s.data()),
-                         (uint32_t)s.length());
-  framed_transport.flush();
-  std::string msg_content_framed = memory_buffer->getBufferAsString();
-
-  std::cout << "thrift序列化2" << msg_content_framed<<  "==-ms\n";
-  
-  folly::IOBufQueue queue;
-  //apache::thrift::BinarySerializer::serialize(u, &queue);
-
-  auto trans = std::make_shared<apache::thrift::transport::TMemoryBuffer>();
-  apache::thrift::protocol::TBinaryProtocol proto(trans);
-  int i = proto.writeString(std::string("hello test"));//writeBinary
-  std::cout << "wrote " << i << "to TMemoryBuffer" << std::endl;
-
-
-  std::string msg;
-  i = proto.readString(msg);
-  std::cout << "read = " <<i << " & "<< msg << std::endl; 
-
-
-  std::fstream myfile;
-  myfile = std::fstream("file2.dat", std::ios::out | std::ios::binary);
-  myfile << trans->getBufferAsString();
-  myfile.close();
-
-  
-}
-
 
 
 void writeTest()
@@ -226,15 +164,10 @@ void writeTest()
 
 void readTest()
 {
-  User u;
-  
+  User u;  
   // Use TFramedTransport   
-
   auto trans = std::make_shared<apache::thrift::transport::TMemoryBuffer>();
   apache::thrift::protocol::TBinaryProtocol proto(trans);
-  
- 
-  
 
   
   std:: ifstream myfile("file2.dat", std::ifstream::binary);
@@ -246,17 +179,85 @@ void readTest()
   myfile.close();
 
   trans->resetBuffer((uint8_t *)buff,1024);
-
-  //int i = proto.readByte((int8_t*)buff);//writeBinary
-
-  string msg;
  
-
   int n=0;
   while(n<extracted)
   {
     n+=u.read(&proto);
-  std::cout<< "read:" << msg << u<< std::endl;
+  std::cout<< "read:" << u<< std::endl;
+  }
+  
+}
+
+
+void readHotKeyLogEntry()
+{
+  HotKeyLogEntry hotkey;  
+  LogMessage u;
+  // Use TFramedTransport   
+  auto trans = std::make_shared<apache::thrift::transport::TMemoryBuffer>();
+  apache::thrift::protocol::TBinaryProtocol proto(trans);
+  
+  std:: ifstream myfile("goku_query_log.00000.log", std::ifstream::binary);
+  //myfile = std::ifstream("file2.dat", std::ios::in | std::ios::binary);
+  long len = 102400;
+  char buff[len];
+  myfile.read(buff, len);
+  size_t extracted = myfile.gcount();
+  
+  myfile.close();
+
+  trans->resetBuffer((uint8_t *)buff,extracted);
+ 
+  int n=0;
+  // while(n<extracted)
+  // {
+  //   n+=u.read(&proto);
+  //   std::cout << "read bytes:" << n << std::endl;
+  //   std::cout<< "read:" <<  u<< std::endl;
+  // }
+
+  bool bS;
+ 
+  string msg;
+
+  while(n<extracted)
+  {
+    if ( !bS && buff[n] == '{')
+    {
+      bS= true;
+      //msg += buff[n];
+      n++; 
+      continue;
+    
+    }
+
+    if ( bS && buff[n]=='}')
+    {
+        bS= false;
+        //msg += buff[n];
+        //hotkey
+        std::cout << "read=" << msg << std::endl;
+        stringstream ss(msg);
+
+        string s1,s2;
+        while( getline(ss,s1,','))
+        {
+          stringstream ss1(s1);
+          getline(ss1,s2,':');
+          std::cout << "key=" <<s2 ;
+          getline(ss1,s2,':');
+          std::cout << "value=" <<s2 << std::endl ;
+
+        }
+
+        msg.clear();
+    }
+    else if (bS)
+    {
+      msg += buff[n];
+    }
+    n++;
   }
 
 //goku::thrift::MetricMetadataLogEntry entry;
@@ -264,12 +265,247 @@ void readTest()
   
 }
 
+typedef std::pair<std::string, int> hot_pair;
+std::vector<hot_pair> hot_vec;
+
+unordered_map<string, int> metricMap{};
+unordered_map<string, int> hotMetricMap{};
+size_t metricCount = 0;
+common::HotKeyDetector<string> detector;
+string last_metricNmae;
+size_t last_count=0;
+int rate = 15;
+
+void readMetricSearch(string metricFile)
+{
+  HotKeyLogEntry hotkey;  
+  LogMessage u;
+  // Use TFramedTransport   
+  auto trans = std::make_shared<apache::thrift::transport::TMemoryBuffer>();
+  apache::thrift::protocol::TBinaryProtocol proto(trans);
+  
+  std:: ifstream myfile(metricFile, std::ifstream::binary);
+  //myfile = std::ifstream("file2.dat", std::ios::in | std::ios::binary);
+  size_t len = 30*1024*1024;
+
+  cout << "size= " << len << endl;
+  char *buff = new char[len];
+  myfile.read(buff, len);
+  size_t extracted = myfile.gcount();
+  
+  myfile.close();  
+ 
+  int n=0;
+  bool bS; 
+  string msg;
+
+  cout << "size = " << extracted << endl;
+  
+
+  while(n<extracted)
+  {
+    if (buff[n] >='0' && buff[n]<='9')
+      msg += buff[n++];
+    else if (buff[n] >='a' && buff[n]<='z')
+      msg += buff[n++];
+    else if (buff[n] >='A' && buff[n]<='Z')
+      msg += buff[n++];
+    else if (buff[n] =='.' ||  buff[n]=='-')
+      msg += buff[n++];
+    else
+    {
+      if (!bS)
+        {
+          string metricName;
+          if (msg == "envoy.py" || msg == "0.0.0" || msg == "ec2.muse"
+            || msg == "ec2.muse." || msg == "Bec2.manas.hbase"
+            || msg == "mesh.downstream" || msg == "18.04")
+          {
+            msg.clear();
+          }
+          else if ( msg.find("upstream") != std::string::npos || msg.find("downstream") != std::string::npos)
+          {
+            msg.clear();
+          }
+          else if (msg.find("tc.") != std::string::npos)
+          {
+            if ( msg.rfind("tc.",0) != 0 )
+              metricName = msg.substr(1) ;
+            else
+              metricName = msg ;
+            msg.clear();
+          }
+          else if (msg.find("ostrich.") != std::string::npos)
+          {
+            if ( msg.rfind("ostrich.",0) != 0 )
+              metricName = msg.substr(1) ;
+            else
+              metricName = msg ;
+            msg.clear();
+          }
+          else if (msg.find("m10n.") != std::string::npos)
+          {
+            if ( msg.rfind("m10n.",0) != 0 )
+              metricName = msg.substr(1) ;
+            else
+              metricName = msg ;
+            msg.clear();
+          }
+          else if (msg.find("statsd.") != std::string::npos)
+          {
+            if ( msg.rfind("statsd.",0) != 0 )
+              metricName = msg.substr(1) ;
+            else
+              metricName = msg ;
+            msg.clear();
+          }
+          else if (msg.find("mp.") != std::string::npos)
+          {
+            if ( msg.rfind("mp.",0) != 0 )
+              metricName = msg.substr(1) ;
+            else
+              metricName = msg ;
+            msg.clear();
+          }
+          else if (msg.find("preagg.") != std::string::npos)
+          {
+            if ( msg.rfind("preagg.",0) != 0 )
+              metricName = msg.substr(1) ;
+            else
+              metricName = msg ;
+            msg.clear();
+          }
+          if (!metricName.empty())
+          {
+            metricMap[metricName]++;
+            metricCount++;
+            //std::cout << metricName << endl;
+            HotkeyLoggerManager::get_instance().log(metricName);
+
+            detector.record(metricName);
+            
+            if (detector.isAbove(metricName, rate))
+            {
+              hotMetricMap[metricName]++;
+              if (last_metricNmae != metricName)
+              {
+                if (!last_metricNmae.empty())
+                  LOG(INFO) << "hot key Found " << last_metricNmae << " " << last_count << " " << rate;
+                last_metricNmae = metricName;
+                last_count=0;
+              }
+              else
+              {
+                last_metricNmae = metricName;
+                ++last_count;
+              }
+            }
+
+          }
+          msg.clear();
+          //msg += " ";
+        }
+      n++;
+      bS = true;
+      continue;
+    }
+    bS = false;
+    continue;
+
+   
+  }
+
+  
+  return;
+
+//goku::thrift::MetricMetadataLogEntry entry;
+
+  
+}
+
+bool cmp(pair<string, int>& a,
+         pair<string, int>& b)
+{
+    return a.second < b.second;
+}
+
 int main(int argc, char **argv) {
+
+initGLog(argv);
+HotkeyLoggerManager::get_instance();
+std::string path = "0a0303ac";//"infra-goku-a-prod-0a01109a";//0a0303ac
+float total = 0;
+for (const auto & entry : fs::directory_iterator(path))
+{
+  std::cout << entry.path() << std::endl;
+  readMetricSearch(entry.path());
+  total = metricMap.size();
+  LOG(INFO) <<  "===========" << entry.path() << "=====Result== " << total << "==" << metricCount << "====================" ;
+  LOG(INFO) <<  "===========" << entry.path() << "=====size== " << metricMap.size() << "==" << hotMetricMap.size() << "====================" ;
+
+
+}     
+
+
 
   //startLog();
   //testThrift();
-  writeTest();
-  readTest();
+  //writeTest();
+  //readTest();
+  //readHotKeyLogEntry();
+  
+  
+  std::vector<float> pecentageV;;
+  //sort(metricMap.begin(), metricMap.end(), cmp);
+
+  std::copy(metricMap.begin(),
+            metricMap.end(),
+            std::back_inserter<std::vector<hot_pair>>(hot_vec));
+
+
+  // for(auto it: metricMap)
+  // {
+  //   cout << it.first << " = " <<  it.second  << ", " << it.second/total<< endl;
+  //   pecentageV.push_back(it.second/total);
+  // }
+
+
+  std::sort(hot_vec.begin(), hot_vec.end(),
+            [](const hot_pair &l, const hot_pair &r)
+            {
+                if (l.second != r.second) {
+                    return l.second < r.second;
+                }
+ 
+                return l.first < r.first;
+            });
+
+  // print the vector
+    for (auto const &pair: hot_vec) {
+        //std::cout << '{' << pair.first << "," << pair.second <<  ", " << pair.second/total << '}' << std::endl;
+    }
+std::cout << "===top10====" << std::endl;
+    for (int n=0; n< 10; ++n)
+    {
+      std::cout << '{' << hot_vec[n].first << "," << hot_vec[n].second <<  ", " << hot_vec[n].second/total << '}' << std::endl;
+    }
+
+
+    for(auto it: hotMetricMap)
+  {
+    cout << it.first << " = " <<  it.second  <<  endl;
+    pecentageV.push_back(it.second/total);
+  }
+
+  unordered_map<string, int32_t>().swap(metricMap);
+
+    return 0;
+
+  std::sort( pecentageV.begin(), pecentageV.end());
+  for (auto it: pecentageV)
+  {
+    cout << it << endl;
+  }
 
   int port = 9090;
 
