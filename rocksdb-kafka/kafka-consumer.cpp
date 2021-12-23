@@ -9,7 +9,6 @@
 #include <mutex>
 #include <thread>
 
-
 #include <D:\3rdLib\librdkafka\src-cpp\rdkafkacpp.h>
 
 static bool run = true;
@@ -84,6 +83,7 @@ void msg_consume(RdKafka::Message *message, void *opaque) {
         tsname = "log append time";
       std::cout << "Timestamp: " << tsname << " " << ts.timestamp << std::endl;
     }
+    std::cout << verbosity << "---" << message->key() << std::endl;
     if (verbosity >= 2 && message->key()) {
       std::cout << "Key: " << *message->key() << std::endl;
     }
@@ -92,6 +92,8 @@ void msg_consume(RdKafka::Message *message, void *opaque) {
                 << " " << ts.timestamp << std::endl;
       printf("rong %d.%s\n", static_cast<int>(message->len()),
              static_cast<const char *>(message->payload()));
+      if (message->key())
+        std::cout << "Key: " << *message->key() << std::endl;
     }
     break;
 
@@ -131,6 +133,8 @@ int main() {
   std::vector<std::string> topics;
   std::string group_id = "101";
 
+  int64_t start_offset = RdKafka::Topic::OFFSET_BEGINNING;
+
   RdKafka::Conf *conf = RdKafka::Conf::create(RdKafka::Conf::CONF_GLOBAL);
   RdKafka::Conf *tconf = RdKafka::Conf::create(RdKafka::Conf::CONF_TOPIC);
   // group.id必须设置
@@ -143,6 +147,16 @@ int main() {
   topics.push_back("test");
   // bootstrap.servers可以替换为metadata.broker.list
   conf->set("bootstrap.servers", brokers, errstr);
+  // 设置 key
+
+  // if (conf->set("parse.key", "true", errstr) != RdKafka::Conf::CONF_OK) {
+  //   std::cerr << errstr << std::endl;
+  //   exit(1);
+  // }
+  // if (conf->set("key.separator", "*", errstr) != RdKafka::Conf::CONF_OK) {
+  //   std::cerr << errstr << std::endl;
+  //   exit(1);
+  // }
 
   ExampleConsumeCb ex_consume_cb;
   conf->set("consume_cb", &ex_consume_cb, errstr);
